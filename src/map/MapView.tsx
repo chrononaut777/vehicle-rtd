@@ -57,10 +57,10 @@ const stationIcon = (
   });
 
 const midIcon = L.divIcon({
-  className: '',
-  html: '<div class="midpoint-marker" title="Drag to add waypoint"></div>',
-  iconSize: [14, 14],
-  iconAnchor: [7, 7],
+  className: 'midpoint-icon',
+  html: '<div class="midpoint-marker" title="Drag to bend route"></div>',
+  iconSize: [16, 16],
+  iconAnchor: [8, 8],
 });
 
 function MapEventBridge() {
@@ -209,6 +209,8 @@ function ActiveRouteLayer({
     x: number;
     y: number;
   } | null>(null);
+  /** Suppress click-to-insert after a drag (Leaflet often fires click on mouseup). */
+  const midDragRef = useRef(false);
 
   const points = useMemo(() => resolveRoutePoints(sim), [sim]);
   const cruiseHeight = active.flags.cruiseHeight;
@@ -236,9 +238,10 @@ function ActiveRouteLayer({
     for (let i = 0; i < displayPoints.length - 1; i++) {
       const a = displayPoints[i];
       const b = displayPoints[i + 1];
+      // While bending, segment indices shift after the insert preview — skip issue tint.
       const sev = applyIssues ? highlights.segments.get(i) : undefined;
       segs.push({
-        key: `seg-${i}-${a.x.toFixed(0)}-${a.y.toFixed(0)}-${b.x.toFixed(0)}-${b.y.toFixed(0)}`,
+        key: `seg-${i}`,
         positions: [
           gameToLatLng(a.x, a.y) as [number, number],
           gameToLatLng(b.x, b.y) as [number, number],
@@ -250,10 +253,10 @@ function ActiveRouteLayer({
     return segs;
   }, [displayPoints, highlights.segments, bend, color]);
 
+  // Keep mid markers mounted during drag (filtering them out unmounts Leaflet mid-drag).
   const midpoints = useMemo(() => {
     const mids: { index: number; x: number; y: number }[] = [];
     for (let i = 0; i < points.length - 1; i++) {
-      if (bend && bend.index === i) continue;
       const a = points[i];
       const b = points[i + 1];
       mids.push({
@@ -263,7 +266,7 @@ function ActiveRouteLayer({
       });
     }
     return mids;
-  }, [points, bend]);
+  }, [points]);
 
   const segmentEvents = useMemo(
     () => ({
@@ -304,14 +307,27 @@ function ActiveRouteLayer({
 
       {midpoints.map((m) => (
         <Marker
-          key={`mid-${m.index}-${m.x.toFixed(0)}-${m.y.toFixed(0)}`}
-          position={gameToLatLng(m.x, m.y)}
+          key={`mid-${m.index}`}
+          position={
+            bend?.index === m.index
+              ? gameToLatLng(bend.x, bend.y)
+              : gameToLatLng(m.x, m.y)
+          }
           draggable
+          autoPan={false}
           icon={midIcon}
-          zIndexOffset={400}
+          zIndexOffset={600}
           eventHandlers={{
+            mousedown: (e) => {
+              // Start drag immediately without a prior select click.
+              L.DomEvent.stopPropagation(e);
+            },
             click: (e) => {
               L.DomEvent.stopPropagation(e);
+              if (midDragRef.current) {
+                midDragRef.current = false;
+                return;
+              }
               insertWaypointOnSegment(m.index, m.x, m.y);
             },
             contextmenu: (e) => {
@@ -319,7 +335,15 @@ function ActiveRouteLayer({
               e.originalEvent.preventDefault();
               removeRouteSegment(m.index);
             },
+            dragstart: (e) => {
+              L.DomEvent.stopPropagation(e);
+              midDragRef.current = true;
+              const ll = (e.target as L.Marker).getLatLng();
+              const g = latLngToGame(ll.lat, ll.lng);
+              setBend({ index: m.index, x: g.x, y: g.y });
+            },
             drag: (e) => {
+              midDragRef.current = true;
               const ll = (e.target as L.Marker).getLatLng();
               const g = latLngToGame(ll.lat, ll.lng);
               setBend({ index: m.index, x: g.x, y: g.y });
@@ -329,6 +353,7 @@ function ActiveRouteLayer({
               const g = latLngToGame(ll.lat, ll.lng);
               insertWaypointOnSegment(m.index, g.x, g.y);
               setBend(null);
+              // click may follow; leave midDragRef true until click clears it
             },
           }}
         />

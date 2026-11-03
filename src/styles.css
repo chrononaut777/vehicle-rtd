@@ -985,13 +985,21 @@ button.danger {
 }
 
 .midpoint-marker {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   background: #7ec8ff;
   border: 2px solid #1a1a1a;
   box-shadow: 0 0 0 1px rgba(126, 200, 255, 0.45);
   cursor: grab;
+  /* Larger grab target without growing the visible dot much */
+  position: relative;
+}
+
+.midpoint-marker::after {
+  content: "";
+  position: absolute;
+  inset: -8px;
 }
 
 .midpoint-marker:active {
