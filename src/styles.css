@@ -336,11 +336,14 @@ button.danger {
   list-style: none;
   margin: 0;
   padding: 0;
-  max-height: min(60vh, 420px);
-  overflow: auto;
+  max-height: min(55vh, 480px);
+  overflow-x: hidden;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .issues li {
@@ -350,6 +353,7 @@ button.danger {
   border-radius: 0 6px 6px 0;
   background: #141920;
   overflow: hidden;
+  flex: 0 0 auto;
 }
 
 .issues .sev-error {
@@ -372,6 +376,7 @@ button.danger {
   gap: 0.25rem;
   padding: 0.55rem 0.65rem;
   line-height: 1.45;
+  flex-shrink: 0;
 }
 
 .issue-sev-label {
@@ -727,6 +732,10 @@ button.danger {
   overflow-x: hidden;
   overflow-y: auto;
   min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
 }
 
 .floating-panel-body label,

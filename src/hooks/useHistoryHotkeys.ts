@@ -8,11 +8,13 @@ function isEditableTarget(target: EventTarget | null): boolean {
   return target.isContentEditable;
 }
 
-/** Ctrl/Cmd+Z undo, Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y redo; Delete removes selection. */
+/** Ctrl/Cmd+Z undo/redo; Ctrl+C/V station copy-paste; Delete removes selection. */
 export function useHistoryHotkeys() {
   const undo = useProjectStore((s) => s.undo);
   const redo = useProjectStore((s) => s.redo);
   const deleteSelection = useProjectStore((s) => s.deleteSelection);
+  const copyStation = useProjectStore((s) => s.copyStation);
+  const pasteStation = useProjectStore((s) => s.pasteStation);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -30,6 +32,22 @@ export function useHistoryHotkeys() {
       if (!(e.ctrlKey || e.metaKey)) return;
 
       const key = e.key.toLowerCase();
+      if (key === 'c') {
+        const { selectedStationId } = useProjectStore.getState();
+        if (selectedStationId) {
+          e.preventDefault();
+          copyStation(selectedStationId);
+        }
+        return;
+      }
+      if (key === 'v') {
+        const { stationClipboard } = useProjectStore.getState();
+        if (stationClipboard) {
+          e.preventDefault();
+          pasteStation();
+        }
+        return;
+      }
       if (key === 'z' && !e.shiftKey) {
         e.preventDefault();
         undo();
@@ -43,5 +61,5 @@ export function useHistoryHotkeys() {
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [undo, redo, deleteSelection]);
+  }, [undo, redo, deleteSelection, copyStation, pasteStation]);
 }

@@ -83,6 +83,57 @@ export function detectIssues(
   let maxGrade = 0;
   let maxGradeAt = samples[0];
 
+  /** Continuous path runs — one issue per stretch, not per sample. */
+  type PathRun = {
+    kind: 'grade' | 'stall' | 'slow' | 'clip';
+    startS: number;
+    endS: number;
+    x: number;
+    y: number;
+    segmentIndex?: number;
+    worst: number;
+  };
+  const runs: PathRun[] = [];
+  const openRef: { run: PathRun | null } = { run: null };
+
+  const flushRun = () => {
+    const cur = openRef.run;
+    if (!cur) return;
+    // Ignore tiny blips (< ~25 m along path)
+    if (cur.endS - cur.startS >= 25 || cur.kind === 'grade') {
+      runs.push(cur);
+    }
+    openRef.run = null;
+  };
+
+  const noteRun = (
+    kind: PathRun['kind'],
+    s: (typeof samples)[number],
+    worst: number,
+  ) => {
+    const cur = openRef.run;
+    if (cur && cur.kind === kind && s.s - cur.endS < 80) {
+      cur.endS = s.s;
+      if (worst > cur.worst) {
+        cur.worst = worst;
+        cur.x = s.x;
+        cur.y = s.y;
+        cur.segmentIndex = s.segmentIndex;
+      }
+      return;
+    }
+    flushRun();
+    openRef.run = {
+      kind,
+      startS: s.s,
+      endS: s.s,
+      x: s.x,
+      y: s.y,
+      segmentIndex: s.segmentIndex,
+      worst,
+    };
+  };
+
   for (const s of samples) {
     const grade = input.flags.flatTrack ? 0 : Math.abs(Math.tan(s.gradeRad));
     if (grade > maxGrade) {
@@ -91,14 +142,8 @@ export function detectIssues(
     }
 
     if (!input.flags.flatTrack && grade > maxPractical) {
-      issues.push({
-        id: pid(`grade-${s.s.toFixed(0)}`),
-        severity: 'error',
-        message: `Grade ${(grade * 100).toFixed(1)}% exceeds practical rail max (~${(maxPractical * 100).toFixed(1)}%) near (${s.x.toFixed(0)}, ${s.y.toFixed(0)}).`,
-        x: s.x,
-        y: s.y,
-        segmentIndex: s.segmentIndex,
-      });
+      noteRun('grade', s, grade);
+      continue;
     }
 
     if (!input.flags.flatTrack && s.gradeRad > 0.01) {
@@ -106,51 +151,73 @@ export function detectIssues(
       const force = locoForceAtSpeedKN(physics.maxForceKN, 5);
       const net = force - physics.rollKN - inclineKN;
       if (net <= 0) {
-        issues.push({
-          id: pid(`stall-${s.s.toFixed(0)}`),
-          severity: 'error',
-          message: `Consist cannot climb grade at (${s.x.toFixed(0)}, ${s.y.toFixed(0)}) — add locomotives or flatten the route.`,
-          x: s.x,
-          y: s.y,
-          segmentIndex: s.segmentIndex,
-        });
-      } else if (net < force * 0.15) {
-        issues.push({
-          id: pid(`slow-${s.s.toFixed(0)}`),
-          severity: 'warning',
-          message: `Very little excess pull on climb near (${s.x.toFixed(0)}, ${s.y.toFixed(0)}).`,
-          x: s.x,
-          y: s.y,
-          segmentIndex: s.segmentIndex,
-        });
+        noteRun('stall', s, -net);
+        continue;
+      }
+      if (net < force * 0.15) {
+        noteRun('slow', s, force - net);
+        continue;
       }
     }
 
     if (input.flags.flatTrack && heightmap) {
       const terrain = sampleHeight(heightmap, s.x, s.y);
       if (terrain != null && terrain > input.flags.cruiseHeight - 2) {
-        issues.push({
-          id: pid(`clip-${s.s.toFixed(0)}`),
-          severity: 'warning',
-          message: `Flat cruise ${input.flags.cruiseHeight.toFixed(0)} m is at/below terrain (~${terrain.toFixed(0)} m) near (${s.x.toFixed(0)}, ${s.y.toFixed(0)}).`,
-          x: s.x,
-          y: s.y,
-          segmentIndex: s.segmentIndex,
-        });
+        noteRun('clip', s, terrain);
+        continue;
       }
+    }
+
+    // Clear stretch — close run after ~80 m of good path
+    const cur = openRef.run;
+    if (cur && s.s - cur.endS >= 80) flushRun();
+  }
+  flushRun();
+
+  const cruise = input.flags.cruiseHeight;
+  for (const run of runs) {
+    const len = Math.max(1, run.endS - run.startS);
+    if (run.kind === 'grade') {
+      issues.push({
+        id: pid(`grade-${run.startS.toFixed(0)}`),
+        severity: 'error',
+        message: `Grade ${(run.worst * 100).toFixed(1)}% exceeds practical rail max (~${(maxPractical * 100).toFixed(1)}%) over ~${len.toFixed(0)} m near (${run.x.toFixed(0)}, ${run.y.toFixed(0)}).`,
+        x: run.x,
+        y: run.y,
+        segmentIndex: run.segmentIndex,
+      });
+    } else if (run.kind === 'stall') {
+      issues.push({
+        id: pid(`stall-${run.startS.toFixed(0)}`),
+        severity: 'error',
+        message: `Consist cannot climb grade over ~${len.toFixed(0)} m near (${run.x.toFixed(0)}, ${run.y.toFixed(0)}) — add locomotives or flatten the route.`,
+        x: run.x,
+        y: run.y,
+        segmentIndex: run.segmentIndex,
+      });
+    } else if (run.kind === 'slow') {
+      issues.push({
+        id: pid(`slow-${run.startS.toFixed(0)}`),
+        severity: 'warning',
+        message: `Very little excess pull on climb over ~${len.toFixed(0)} m near (${run.x.toFixed(0)}, ${run.y.toFixed(0)}).`,
+        x: run.x,
+        y: run.y,
+        segmentIndex: run.segmentIndex,
+      });
+    } else if (run.kind === 'clip') {
+      issues.push({
+        id: pid(`clip-${run.startS.toFixed(0)}`),
+        severity: 'warning',
+        message: `Flat cruise ${cruise.toFixed(0)} m is at/below terrain (up to ~${run.worst.toFixed(0)} m) for ~${len.toFixed(0)} m near (${run.x.toFixed(0)}, ${run.y.toFixed(0)}). Raise cruise height or avoid the ridge.`,
+        x: run.x,
+        y: run.y,
+        segmentIndex: run.segmentIndex,
+      });
     }
   }
 
-  // Deduplicate similar issues by rounding position buckets (keep first N of each type)
-  const deduped: Issue[] = [];
-  const seen = new Set<string>();
-  for (const issue of issues) {
-    const key = `${issue.id.split('-')[0]}-${Math.round((issue.x ?? 0) / 50)}-${Math.round((issue.y ?? 0) / 50)}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    deduped.push(issue);
-    if (deduped.length >= 40) break;
-  }
+  // Cap list size; path issues are already clustered by run
+  const deduped: Issue[] = issues.slice(0, 24);
 
   if (input.flags.flatTrack) {
     deduped.unshift({

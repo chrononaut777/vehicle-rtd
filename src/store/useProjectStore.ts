@@ -100,6 +100,9 @@ export interface RouteTripSummary {
   droneSizing: DroneSizing | null;
 }
 
+/** Station/port details reusable on paste (no id or map position). */
+export type StationClipboard = Omit<Station, 'id' | 'x' | 'y'>;
+
 interface ProjectState {
   project: Project;
   selectedStationId: string | null;
@@ -118,6 +121,8 @@ interface ProjectState {
   routeSummaries: RouteTripSummary[];
   /** Map spotlight for a clicked issue (nonce retriggers fly-to). */
   mapFocus: { x: number; y: number; issueId?: string; nonce: number } | null;
+  /** Copied station/port template for paste / next place. */
+  stationClipboard: StationClipboard | null;
   past: Project[];
   future: Project[];
 
@@ -134,6 +139,10 @@ interface ProjectState {
   duplicateRoute: (routeId: string) => void;
   setVehicleType: (vehicleType: VehicleType) => void;
   placeStationAt: (x: number, y: number) => void;
+  /** Copy selected (or given) station details into the clipboard. */
+  copyStation: (id?: string) => void;
+  /** Paste clipboard station at cursor, near selection, or explicit coords. */
+  pasteStation: (x?: number, y?: number) => void;
   updateStation: (id: string, patch: Partial<Station>) => void;
   removeStation: (id: string) => void;
   selectStation: (id: string | null) => void;
@@ -324,6 +333,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
     droneSizing: null,
     routeSummaries: [],
     mapFocus: null,
+    stationClipboard: null,
     past: [],
     future: [],
 
@@ -495,19 +505,26 @@ export const useProjectStore = create<ProjectState>((set, get) => {
 
     placeStationAt(x, y) {
       const c = clampToWorld(x, y);
-      const { project } = get();
+      const { project, stationClipboard } = get();
       const active = getActiveRoute(project);
       const n = project.stations.length + 1;
       const stopLabel = active.vehicleType === 'drone' ? 'Port' : 'Station';
+      const clip =
+        stationClipboard &&
+        stationClipboard.vehicleType === active.vehicleType
+          ? stationClipboard
+          : null;
       const station: Station = {
         id: newId('st'),
-        name: `${stopLabel} ${n}`,
+        name: clip?.name ?? `${stopLabel} ${n}`,
         vehicleType: active.vehicleType,
-        role: 'both',
+        role: clip?.role ?? 'both',
         x: c.x,
         y: c.y,
-        z: active.flags.cruiseHeight,
-        beltMk: 5,
+        z: clip?.z ?? active.flags.cruiseHeight,
+        dwellSeconds: clip?.dwellSeconds,
+        beltMk: clip?.beltMk ?? (active.vehicleType === 'drone' ? undefined : 5),
+        itemsPerMin: clip?.itemsPerMin,
       };
       const next: Project = {
         ...project,
@@ -516,7 +533,75 @@ export const useProjectStore = create<ProjectState>((set, get) => {
       commitProject(next, {
         selectedStationId: station.id,
         selectedWaypointId: null,
+        statusMessage: clip
+          ? `Placed copy of “${clip.name}”`
+          : null,
       });
+    },
+
+    copyStation(id) {
+      const { project, selectedStationId } = get();
+      const targetId = id ?? selectedStationId;
+      if (!targetId) {
+        set({ statusMessage: 'Select a station or port to copy' });
+        return;
+      }
+      const source = project.stations.find((s) => s.id === targetId);
+      if (!source) return;
+      const clipboard: StationClipboard = {
+        name: source.name,
+        vehicleType: source.vehicleType,
+        role: source.role,
+        z: source.z,
+        dwellSeconds: source.dwellSeconds,
+        beltMk: source.beltMk,
+        itemsPerMin: source.itemsPerMin,
+      };
+      set({
+        stationClipboard: clipboard,
+        statusMessage: `Copied “${source.name}” — Paste (Ctrl+V) or Place to reuse details`,
+      });
+    },
+
+    pasteStation(x, y) {
+      const { stationClipboard, cursor, selectedStationId, project } = get();
+      if (!stationClipboard) {
+        set({ statusMessage: 'Nothing copied — select a stop and Copy first' });
+        return;
+      }
+      let px = x;
+      let py = y;
+      if (px == null || py == null) {
+        if (cursor) {
+          px = cursor.x;
+          py = cursor.y;
+        } else if (selectedStationId) {
+          const sel = project.stations.find((s) => s.id === selectedStationId);
+          if (sel) {
+            px = sel.x + 50;
+            py = sel.y + 50;
+          }
+        }
+      }
+      if (px == null || py == null) {
+        const src = project.stations.find(
+          (s) =>
+            s.name === stationClipboard.name &&
+            s.vehicleType === stationClipboard.vehicleType,
+        );
+        px = (src?.x ?? 0) + 50;
+        py = (src?.y ?? 0) + 50;
+      }
+      // Ensure place uses clipboard even if vehicle type on active route differs:
+      // temporarily align clipboard vehicle to active, or place with clipboard type.
+      const active = getActiveRoute(project);
+      if (stationClipboard.vehicleType !== active.vehicleType) {
+        set({
+          statusMessage: `Clipboard is a ${stationClipboard.vehicleType} stop — switch route type or copy a matching stop`,
+        });
+        return;
+      }
+      get().placeStationAt(px, py);
     },
 
     updateStation(id, patch) {

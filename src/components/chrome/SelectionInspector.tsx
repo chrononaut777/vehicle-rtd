@@ -18,6 +18,9 @@ export default function SelectionInspector() {
   const removeWaypoint = useProjectStore((s) => s.removeWaypoint);
   const selectStation = useProjectStore((s) => s.selectStation);
   const selectWaypoint = useProjectStore((s) => s.selectWaypoint);
+  const copyStation = useProjectStore((s) => s.copyStation);
+  const pasteStation = useProjectStore((s) => s.pasteStation);
+  const stationClipboard = useProjectStore((s) => s.stationClipboard);
 
   const active = getActiveRoute(project);
   const selected = project.stations.find((s) => s.id === selectedStationId);
@@ -166,13 +169,39 @@ export default function SelectionInspector() {
             <p className="mono">
               X {fmt(selected.x, 2)} Y {fmt(selected.y, 2)}
             </p>
-            <button
-              type="button"
-              className="danger"
-              onClick={() => removeStation(selected.id)}
-            >
-              Delete {selected.vehicleType === 'drone' ? 'port' : 'station'}
-            </button>
+            <div className="btn-row tight">
+              <button
+                type="button"
+                title="Copy details (Ctrl+C)"
+                onClick={() => copyStation(selected.id)}
+              >
+                Copy
+              </button>
+              <button
+                type="button"
+                title="Paste nearby (Ctrl+V)"
+                disabled={
+                  !stationClipboard ||
+                  stationClipboard.vehicleType !== selected.vehicleType
+                }
+                onClick={() => pasteStation()}
+              >
+                Paste
+              </button>
+              <button
+                type="button"
+                className="danger"
+                onClick={() => removeStation(selected.id)}
+              >
+                Delete
+              </button>
+            </div>
+            {stationClipboard && (
+              <p className="hint">
+                Clipboard: “{stationClipboard.name}”. Place tool also reuses
+                these details until you copy something else.
+              </p>
+            )}
           </>
         )}
 
