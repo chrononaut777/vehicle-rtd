@@ -971,7 +971,9 @@ export const useProjectStore = create<ProjectState>((set, get) => {
       const url = window.location.href;
       try {
         await navigator.clipboard.writeText(url);
-        set({ statusMessage: 'Share link copied to clipboard' });
+        set({
+          statusMessage: `Share link copied (${length.toLocaleString()} chars)`,
+        });
       } catch {
         set({ statusMessage: 'Share hash set in URL — copy from address bar' });
       }
