@@ -1,13 +1,14 @@
 {
-  "width": 300,
-  "height": 300,
+  "width": 400,
+  "height": 400,
   "minX": -3246,
   "maxX": 4253,
   "minY": -3750,
   "maxY": 3750,
-  "zMin": -40,
+  "zMin": -179,
   "zMax": 480,
   "encoding": "uint16",
   "approximate": true,
-  "attribution": "Placeholder DEM generated from procedural noise — approximate terrain for planning only. Not official Coffee Stain data."
+  "attribution": "Approximate DEM interpolated from SCIM mapData marker elevations (Satisfactory-Calculator). Not an official Coffee Stain heightfield.",
+  "sampleCount": 9268
 }

@@ -6,6 +6,7 @@ import { useProjectStore } from '../store/useProjectStore';
 export default function RouteOrderList() {
   const project = useProjectStore((s) => s.project);
   const moveRouteNode = useProjectStore((s) => s.moveRouteNode);
+  const reverseActiveRoute = useProjectStore((s) => s.reverseActiveRoute);
   const removeRouteNodeAt = useProjectStore((s) => s.removeRouteNodeAt);
   const selectStation = useProjectStore((s) => s.selectStation);
   const selectWaypoint = useProjectStore((s) => s.selectWaypoint);
@@ -65,6 +66,14 @@ export default function RouteOrderList() {
         </button>
         <button type="button" onClick={() => appendUnlinkedStations()}>
           Add unlinked
+        </button>
+        <button
+          type="button"
+          disabled={active.route.length < 2}
+          onClick={() => reverseActiveRoute()}
+          title="Reverse stop order (flip travel direction)"
+        >
+          Reverse
         </button>
         <button type="button" className="danger" onClick={() => clearRoute()}>
           Clear route

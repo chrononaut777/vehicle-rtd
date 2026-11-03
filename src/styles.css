@@ -92,6 +92,19 @@ select {
   padding: 0.4rem 0.5rem;
 }
 
+input:disabled,
+select:disabled {
+  opacity: 0.55;
+  color: var(--muted);
+  cursor: default;
+  background: #0c1015;
+}
+
+label:has(> input:disabled),
+label:has(> select:disabled) {
+  opacity: 0.7;
+}
+
 button {
   background: #2a3340;
   color: var(--text);
@@ -321,11 +334,6 @@ button.danger {
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
-}
-
-.consist-grid input:disabled {
-  opacity: 0.75;
-  cursor: default;
 }
 
 .sizing-stats {
@@ -764,6 +772,9 @@ button.danger {
   position: absolute;
   bottom: 72px;
   left: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
   padding: 0.35rem 0.6rem;
   border-radius: 6px;
   border: 1px solid var(--border);
@@ -771,6 +782,10 @@ button.danger {
   font-size: 0.75rem;
   color: var(--muted);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.coords-chip-z {
+  opacity: 0.9;
 }
 
 .status-toast {
@@ -982,6 +997,34 @@ button.danger {
 .waypoint-marker.selected {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+
+.dir-arrow-icon {
+  background: transparent !important;
+  border: none !important;
+}
+
+.dir-arrow {
+  width: 0;
+  height: 0;
+  margin: 2px auto 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 11px solid var(--arrow-color, #d4a017);
+  filter:
+    drop-shadow(0 0 1.5px #0b0e12)
+    drop-shadow(0 0 0.5px #0b0e12)
+    drop-shadow(0 1px 1px rgba(0, 0, 0, 0.65));
+  transform-origin: 50% 65%;
+  opacity: 0.98;
+  pointer-events: none;
+}
+
+.dir-arrow.muted {
+  opacity: 0.38;
+  filter:
+    drop-shadow(0 0 1px #0b0e12)
+    drop-shadow(0 1px 1px rgba(0, 0, 0, 0.45));
 }
 
 .midpoint-marker {

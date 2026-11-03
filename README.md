@@ -51,7 +51,7 @@ npm run build
 | `npm run build` | Production build |
 | `npm run test` | Physics unit tests |
 | `npm run build:tiles` | Generate `public/tiles/basemap.webp` (+ zoom pyramid) |
-| `npm run build:heightmap` | Generate `public/data/heightmap.*` placeholder DEM |
+| `npm run build:heightmap` | Build `public/data/heightmap.*` DEM from SCIM marker elevations |
 | `npm run build:nodes` | Extract SCIM resource nodes/wells → `public/data/resource-nodes.json` |
 
 ## Assets / attribution
@@ -60,7 +60,7 @@ npm run build
 
 The page uses `referrer: no-referrer` because the CDN returns **403** when the `Referer` is `localhost`.
 
-**Heightmap** under `public/data/` is a coarse procedural DEM for grade/clearance hints only (approximate).
+**Heightmap** under `public/data/` is a coarse DEM interpolated from SCIM mapData marker elevations (nodes, wells, slugs, collectibles) for grade/clearance hints — approximate, not a true landscape heightfield.
 
 **Resource nodes** are a compact local extract of SCIM `mapData` (`npm run build:nodes`). The live SCIM JSON is CORS-blocked from other origins, so the app does not fetch it at runtime. Node overlay is off by default and lazy-loads when enabled.
 

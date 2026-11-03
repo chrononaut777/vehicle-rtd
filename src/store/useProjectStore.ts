@@ -163,6 +163,8 @@ interface ProjectState {
   removeRouteNodeAt: (index: number) => void;
   /** Reorder a route node (DnD / ↑↓). */
   moveRouteNode: (fromIndex: number, toIndex: number) => void;
+  /** Reverse visit order of the active route (flips travel direction / map arrows). */
+  reverseActiveRoute: () => void;
   /** Delete the track hop at a polyline segment (waypoints, or unlink next stop). */
   removeRouteSegment: (segmentIndex: number) => void;
   /** Append every matching-type station not currently on the active route. */
@@ -846,6 +848,17 @@ export const useProjectStore = create<ProjectState>((set, get) => {
       const [node] = route.splice(fromIndex, 1);
       route.splice(toIndex, 0, node);
       commitProject(updateActiveRoute(project, { route }));
+    },
+
+    reverseActiveRoute() {
+      const { project } = get();
+      const active = getActiveRoute(project);
+      if (active.route.length < 2) return;
+      // Preserve node identities; reverse visit sequence so travel (and arrows) flip.
+      // Closed loops keep closedLoop — travel simply runs the circuit the other way.
+      commitProject(
+        updateActiveRoute(project, { route: [...active.route].reverse() }),
+      );
     },
 
     removeRouteSegment(segmentIndex) {

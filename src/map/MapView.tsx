@@ -63,6 +63,72 @@ const midIcon = L.divIcon({
   iconAnchor: [8, 8],
 });
 
+/** CSS deg from north (0° = up), matching Leaflet CRS.Simple screen axes. */
+function bearingDeg(
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+): number {
+  const [lat1, lng1] = gameToLatLng(ax, ay);
+  const [lat2, lng2] = gameToLatLng(bx, by);
+  const dLat = lat2 - lat1;
+  const dLng = lng2 - lng1;
+  return (Math.atan2(dLng, dLat) * 180) / Math.PI;
+}
+
+/** Cache DivIcons so Marker doesn't remount on every parent render. */
+const dirArrowIconCache = new Map<string, L.DivIcon>();
+
+function directionArrowIcon(color: string, deg: number, muted = false) {
+  const rounded = Math.round(deg);
+  const key = `${color}|${rounded}|${muted ? 1 : 0}`;
+  let icon = dirArrowIconCache.get(key);
+  if (!icon) {
+    icon = L.divIcon({
+      className: 'dir-arrow-icon',
+      html: `<div class="dir-arrow ${muted ? 'muted' : ''}" style="--arrow-color:${color};transform:rotate(${rounded}deg)" aria-hidden="true"></div>`,
+      iconSize: [14, 14],
+      iconAnchor: [7, 7],
+    });
+    dirArrowIconCache.set(key, icon);
+  }
+  return icon;
+}
+
+type DirArrow = {
+  key: string;
+  x: number;
+  y: number;
+  deg: number;
+  color: string;
+};
+
+/** One arrow per segment (≥ minLen), placed before the midpoint handle. */
+function buildDirectionArrows(
+  points: { x: number; y: number }[],
+  color: string,
+  keyPrefix: string,
+  minLenM = 45,
+): DirArrow[] {
+  const arrows: DirArrow[] = [];
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i];
+    const b = points[i + 1];
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    if (len < minLenM) continue;
+    const t = 0.38;
+    arrows.push({
+      key: `${keyPrefix}-arr-${i}`,
+      x: a.x + (b.x - a.x) * t,
+      y: a.y + (b.y - a.y) * t,
+      deg: bearingDeg(a.x, a.y, b.x, b.y),
+      color,
+    });
+  }
+  return arrows;
+}
+
 function MapEventBridge() {
   const tool = useProjectStore((s) => s.tool);
   const placeStationAt = useProjectStore((s) => s.placeStationAt);
@@ -163,21 +229,38 @@ function InactiveRouteLayer({
     [points],
   );
 
+  const arrows = useMemo(
+    () => buildDirectionArrows(points, color, `inact-${route.id}`, 70),
+    [points, color, route.id],
+  );
+
   if (positions.length < 2) return null;
 
   return (
-    <Polyline
-      positions={positions}
-      pathOptions={{
-        color,
-        weight: 3,
-        opacity: 0.35,
-        lineCap: 'round',
-        lineJoin: 'round',
-        dashArray: route.vehicleType === 'drone' ? '6 8' : undefined,
-      }}
-      interactive={false}
-    />
+    <>
+      <Polyline
+        positions={positions}
+        pathOptions={{
+          color,
+          weight: 3,
+          opacity: 0.35,
+          lineCap: 'round',
+          lineJoin: 'round',
+          dashArray: route.vehicleType === 'drone' ? '6 8' : undefined,
+        }}
+        interactive={false}
+      />
+      {arrows.map((a) => (
+        <Marker
+          key={a.key}
+          position={gameToLatLng(a.x, a.y)}
+          interactive={false}
+          keyboard={false}
+          zIndexOffset={200}
+          icon={directionArrowIcon(a.color, a.deg, true)}
+        />
+      ))}
+    </>
   );
 }
 
@@ -268,6 +351,16 @@ function ActiveRouteLayer({
     return mids;
   }, [points]);
 
+  // Build from original points (not bend preview) so arrow keys stay stable
+  // while dragging midpoints; hide the segment being bent.
+  const directionArrows = useMemo(() => {
+    const arrows = buildDirectionArrows(points, color, 'act');
+    if (bend) {
+      return arrows.filter((a) => a.key !== `act-arr-${bend.index}`);
+    }
+    return arrows;
+  }, [points, color, bend]);
+
   const segmentEvents = useMemo(
     () => ({
       click: (e: L.LeafletMouseEvent) => {
@@ -302,6 +395,17 @@ function ActiveRouteLayer({
             dashArray,
           }}
           eventHandlers={segmentEvents}
+        />
+      ))}
+
+      {directionArrows.map((a) => (
+        <Marker
+          key={a.key}
+          position={gameToLatLng(a.x, a.y)}
+          interactive={false}
+          keyboard={false}
+          zIndexOffset={350}
+          icon={directionArrowIcon(a.color, a.deg)}
         />
       ))}
 

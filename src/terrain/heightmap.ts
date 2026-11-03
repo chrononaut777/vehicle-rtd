@@ -56,12 +56,18 @@ export async function loadHeightmap(
   return loadPromise;
 }
 
+/**
+ * Sample terrain Z (meters) at game XY (meters).
+ * Grid axes match WORLD / SCIM game space: u ← X (west→east),
+ * v ← Y (north/minY → south/maxY). Same convention as the DEM builder.
+ */
 export function sampleHeight(hm: Heightmap, x: number, y: number): number | null {
   const { meta, data } = hm;
   if (x < meta.minX || x > meta.maxX || y < meta.minY || y > meta.maxY) {
     return null;
   }
   const u = ((x - meta.minX) / (meta.maxX - meta.minX)) * (meta.width - 1);
+  // Row 0 = meta.minY (north, Y = −3750); last row = meta.maxY (south).
   const v = ((y - meta.minY) / (meta.maxY - meta.minY)) * (meta.height - 1);
   const x0 = Math.floor(u);
   const y0 = Math.floor(v);

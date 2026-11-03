@@ -95,7 +95,8 @@ export default function SelectionInspector() {
                     selected.vehicleType === active.vehicleType
                   }
                   title={
-                    active.flags.flatTrack
+                    active.flags.flatTrack &&
+                    selected.vehicleType === active.vehicleType
                       ? 'Locked to cruise height while Build flat is on'
                       : undefined
                   }
