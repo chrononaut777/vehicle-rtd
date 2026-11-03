@@ -1,0 +1,13 @@
+{
+  "width": 300,
+  "height": 300,
+  "minX": -3246,
+  "maxX": 4253,
+  "minY": -3750,
+  "maxY": 3750,
+  "zMin": -40,
+  "zMax": 480,
+  "encoding": "uint16",
+  "approximate": true,
+  "attribution": "Placeholder DEM generated from procedural noise — approximate terrain for planning only. Not official Coffee Stain data."
+}

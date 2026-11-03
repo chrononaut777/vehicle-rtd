@@ -1,0 +1,3 @@
+Basemap is procedurally generated for map-rtd.
+It is NOT Coffee Stain Studios game art and is not sourced from satisfactory-calculator tiles.
+Biome color regions are a rough fan approximation of the Satisfactory world layout.
