@@ -30,6 +30,8 @@ export default function SelectionInspector() {
         selected,
         sizing?.platforms,
         active.cargo.beltMk ?? 5,
+        project.stations,
+        active.route,
       )
     : null;
 
@@ -147,25 +149,56 @@ export default function SelectionInspector() {
                 {selected.vehicleType !== 'drone' && (
                   <>
                     {stationPlatforms && (
-                      <dl className="stats sizing-stats">
-                        <div>
-                          <dt>Platforms</dt>
-                          <dd>{stationPlatforms.platforms}</dd>
-                        </div>
-                      </dl>
+                      <>
+                        <dl className="stats sizing-stats">
+                          <div>
+                            <dt>Dock</dt>
+                            <dd>{stationPlatforms.dockPlatforms}</dd>
+                          </div>
+                          <div>
+                            <dt>Loading</dt>
+                            <dd>
+                              {stationPlatforms.loadingPlatforms > 0
+                                ? stationPlatforms.loadingPlatforms
+                                : '—'}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>Exclusive</dt>
+                            <dd>
+                              {stationPlatforms.exclusiveCars > 0
+                                ? stationPlatforms.exclusiveCars
+                                : '—'}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>Shared</dt>
+                            <dd>
+                              {stationPlatforms.sharedCars.length > 0
+                                ? stationPlatforms.sharedCars.length
+                                : '—'}
+                            </dd>
+                          </div>
+                        </dl>
+                        <p className="hint">{stationPlatforms.breakdown}</p>
+                        <p className="hint">
+                          Whole cars fill here first; leftover fractions share a
+                          car with other{' '}
+                          {selected.role === 'dropoff' ? 'dropoffs' : 'pickups'}
+                          . Belts need ~
+                          {stationPlatforms.beltPlatforms || '—'}× dual Mk.
+                          {active.cargo.beltMk ?? 5} (
+                          {platformBeltCeiling(
+                            (active.cargo.beltMk ?? 5) as BeltMk,
+                          )}
+                          /min each)
+                          {stationPlatforms.beltBound
+                            ? ' — more than the dock'
+                            : ''}
+                          .
+                        </p>
+                      </>
                     )}
-                    <p className="hint">
-                      Dual-port Mk.{active.cargo.beltMk ?? 5} ceiling ≈{' '}
-                      {platformBeltCeiling(
-                        (active.cargo.beltMk ?? 5) as BeltMk,
-                      )}
-                      /min per freight platform (set belt mark in Settings).
-                      {stationPlatforms
-                        ? stationPlatforms.beltBound
-                          ? ` Belts need ${stationPlatforms.beltPlatforms} platforms for this rate (train dock is ${stationPlatforms.dockPlatforms}).`
-                          : ` Dock length ${stationPlatforms.dockPlatforms} ≈ ${platformBeltCeiling((active.cargo.beltMk ?? 5) as BeltMk) * stationPlatforms.platforms}/min.`
-                        : ''}
-                    </p>
                   </>
                 )}
               </>

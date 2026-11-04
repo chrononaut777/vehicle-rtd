@@ -4,8 +4,11 @@ import {
   newId,
   toRouteSimInput,
   updateActiveRoute,
+  type Station,
 } from '../domain/types';
 import {
+  allocateStationCars,
+  peersForFlow,
   platformsForStation,
   sizeConsistFromThroughput,
 } from './sizeConsist';
@@ -75,57 +78,119 @@ describe('sizeConsistFromThroughput', () => {
   });
 });
 
-describe('platformsForStation', () => {
-  const base = {
-    id: 's',
-    name: 'S',
-    vehicleType: 'train' as const,
-    role: 'pickup' as const,
+function pickup(
+  id: string,
+  name: string,
+  itemsPerMin: number,
+): Station {
+  return {
+    id,
+    name,
+    vehicleType: 'train',
+    role: 'pickup',
     x: 0,
     y: 0,
+    itemsPerMin,
   };
+}
 
-  it('uses dock length for a low-rate station', () => {
-    // Mk.5 dual ports = 1560/min → 200/min needs 1 belt platform; dock 16 wins
-    const result = platformsForStation(
-      { ...base, itemsPerMin: 200 },
-      16,
-      5,
+describe('allocateStationCars', () => {
+  it('gives exclusive full cars then packs partials into one shared car', () => {
+    // 1440×3 + 1080 = 5400 on 16 cars
+    // shares: 4.266, 4.266, 4.266, 3.2 → floors 4+4+4+3=15, partials → 1 shared
+    const peers = [
+      pickup('a', 'Alpha', 1440),
+      pickup('b', 'Bravo', 1440),
+      pickup('c', 'Charlie', 1440),
+      pickup('d', 'Delta', 1080),
+    ];
+    const alloc = allocateStationCars(peers, 16);
+    expect(alloc.get('a')).toMatchObject({
+      exclusiveCars: 4,
+      exclusiveRange: { from: 1, to: 4 },
+      sharedCars: [16],
+      loadingPlatforms: 5,
+    });
+    expect(alloc.get('a')!.partialFraction).toBeCloseTo(0.2666, 2);
+    expect(alloc.get('a')!.sharedWith).toEqual(
+      expect.arrayContaining(['Bravo', 'Charlie', 'Delta']),
     );
-    expect(result).toEqual({
-      platforms: 16,
-      dockPlatforms: 16,
-      beltPlatforms: 1,
-      beltBound: false,
+    expect(alloc.get('d')).toMatchObject({
+      exclusiveCars: 3,
+      exclusiveRange: { from: 13, to: 15 },
+      sharedCars: [16],
+      loadingPlatforms: 4,
     });
   });
 
-  it('raises platforms when belts alone need more than the dock', () => {
-    // 5000/min ÷ 1560 ≈ 3.2 → 4 belt platforms vs dock 2
-    const result = platformsForStation(
-      { ...base, itemsPerMin: 5000 },
-      2,
-      5,
-    );
-    expect(result).toEqual({
-      platforms: 4,
-      dockPlatforms: 2,
-      beltPlatforms: 4,
-      beltBound: true,
+  it('keeps a solo station on the full dock with no sharing', () => {
+    const alloc = allocateStationCars([pickup('a', 'Only', 5400)], 16);
+    expect(alloc.get('a')).toMatchObject({
+      exclusiveCars: 16,
+      exclusiveRange: { from: 1, to: 16 },
+      sharedCars: [],
+      loadingPlatforms: 16,
+      partialFraction: 0,
     });
   });
+});
 
-  it('falls back to dock length when items/min is unset', () => {
-    const result = platformsForStation({ ...base }, 8);
-    expect(result).toEqual({
-      platforms: 8,
-      dockPlatforms: 8,
-      beltPlatforms: 0,
-      beltBound: false,
-    });
+describe('peersForFlow', () => {
+  it('orders pickups starting just after the dropoff', () => {
+    const a = pickup('a', 'Alpha', 1440);
+    const b = pickup('b', 'Bravo', 1440);
+    const drop: Station = {
+      id: 'd',
+      name: 'Drop',
+      vehicleType: 'train',
+      role: 'dropoff',
+      x: 0,
+      y: 0,
+      itemsPerMin: 2880,
+    };
+    // Route listed Alpha before drop, but after-drop order is Bravo then Alpha
+    const stations = [a, b, drop];
+    const route = [
+      { kind: 'station' as const, stationId: 'a' },
+      { kind: 'station' as const, stationId: 'd' },
+      { kind: 'station' as const, stationId: 'b' },
+    ];
+    const peers = peersForFlow(a, stations, route);
+    expect(peers.map((s) => s.id)).toEqual(['b', 'a']);
+  });
+});
+
+describe('platformsForStation', () => {
+  it('assigns lower car numbers to the first station after drop', () => {
+    const a = pickup('a', 'Alpha', 1440);
+    const b = pickup('b', 'Bravo', 3960);
+    const drop: Station = {
+      id: 'd',
+      name: 'Drop',
+      vehicleType: 'train',
+      role: 'dropoff',
+      x: 0,
+      y: 0,
+      itemsPerMin: 5400,
+    };
+    const stations = [a, b, drop];
+    // Alpha appears first in the array, but Bravo is first after drop
+    const route = [
+      { kind: 'station' as const, stationId: 'a' },
+      { kind: 'station' as const, stationId: 'd' },
+      { kind: 'station' as const, stationId: 'b' },
+    ];
+    const bravo = platformsForStation(b, 16, 5, stations, route);
+    const alpha = platformsForStation(a, 16, 5, stations, route);
+    // Bravo 3960/5400*16 = 11.733 → cars 1–11 exclusive
+    expect(bravo!.exclusiveRange).toEqual({ from: 1, to: 11 });
+    // Alpha 1440/5400*16 = 4.266 → cars 12–15 exclusive
+    expect(alpha!.exclusiveRange).toEqual({ from: 12, to: 15 });
+    expect(bravo!.sharedCars).toEqual(alpha!.sharedCars);
   });
 
   it('returns null for passthrough, drones, or missing sizing', () => {
+    const base = pickup('s', 'S', 100);
     expect(
       platformsForStation({ ...base, role: 'passthrough' }, 16),
     ).toBeNull();

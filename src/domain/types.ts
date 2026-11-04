@@ -260,17 +260,23 @@ export function updateActiveRoute(
   return updateRouteInProject(project, active.id, patch);
 }
 
-/** Stations referenced by a route’s ordered node list. */
+/** Stations referenced by a route’s ordered node list (route order, first visit). */
 export function stationsOnRoute(
   stations: Station[],
   route: RouteNode[],
 ): Station[] {
-  const ids = new Set(
-    route
-      .filter((n): n is Extract<RouteNode, { kind: 'station' }> => n.kind === 'station')
-      .map((n) => n.stationId),
-  );
-  return stations.filter((s) => ids.has(s.id));
+  const byId = new Map(stations.map((s) => [s.id, s]));
+  const out: Station[] = [];
+  const seen = new Set<string>();
+  for (const node of route) {
+    if (node.kind !== 'station') continue;
+    if (seen.has(node.stationId)) continue;
+    const s = byId.get(node.stationId);
+    if (!s) continue;
+    seen.add(s.id);
+    out.push(s);
+  }
+  return out;
 }
 
 function normalizeRoute(raw: Partial<Route> & { name?: string }, index: number): Route {
