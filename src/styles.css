@@ -105,6 +105,7 @@ label:has(> select:disabled) {
   opacity: 0.7;
 }
 
+
 button {
   background: #2a3340;
   color: var(--text);

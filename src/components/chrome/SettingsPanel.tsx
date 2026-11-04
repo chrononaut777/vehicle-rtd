@@ -89,11 +89,21 @@ export default function SettingsPanel() {
             />
             Build flat (no grades)
           </label>
-          <label>
+          <label
+            title={
+              active.flags.flatTrack
+                ? undefined
+                : 'Unused while Build flat is off — path Z comes from stations and waypoints'
+            }
+          >
             Cruise height (m)
             <NumberField
-              value={active.flags.cruiseHeight}
+              value={active.flags.flatTrack ? active.flags.cruiseHeight : null}
               emptyValue={0}
+              disabled={!active.flags.flatTrack}
+              placeholder={
+                active.flags.flatTrack ? undefined : 'n/a (use stop Z)'
+              }
               onCommit={(n) => setCruiseHeight(n ?? 0)}
             />
           </label>
