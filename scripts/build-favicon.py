@@ -65,39 +65,40 @@ def draw_mark(size: int) -> Image.Image:
 
 
 def draw_mark_16() -> Image.Image:
-    """Pixel-grid tuned 16x16 for tab crispness."""
+    """Hand-tuned 16x16 pixel mark — coherent ⚡ geometry, no soft downscale."""
+    # . clear  # chrome edge  + panel  g gold  w stop ring  b stop
+    # 180°-symmetric ⚡: top-right stop ↔ bottom-leftish stop, shared mid bar
+    glyph = [
+        "..############..",
+        ".##############.",
+        ".##++++++++++##.",
+        ".#++++++bb++++#.",
+        ".#++++++bb++++#.",
+        ".#+++++gg+++++#.",
+        ".#++++gg++++++#.",
+        ".#+++ggggg++++#.",
+        ".#++++ggggg+++#.",
+        ".#++++++gg++++#.",
+        ".#+++++gg+++++#.",
+        ".#++++bb++++++#.",
+        ".#++++bb++++++#.",
+        ".##++++++++++##.",
+        ".##############.",
+        "..############..",
+    ]
+    colors = {
+        ".": CLEAR,
+        "#": BG,
+        "+": PANEL,
+        "g": GOLD,
+        "w": WHITE,
+        "b": BLUE,
+    }
     img = Image.new("RGBA", (16, 16), CLEAR)
     px = img.load()
-    corners = {
-        (0, 0),
-        (1, 0),
-        (0, 1),
-        (15, 0),
-        (14, 0),
-        (15, 1),
-        (0, 15),
-        (1, 15),
-        (0, 14),
-        (15, 15),
-        (14, 15),
-        (15, 14),
-    }
-    for y in range(16):
-        for x in range(16):
-            if (x, y) in corners:
-                continue
-            edge = x in (0, 15) or y in (0, 15) or x in (1, 14) or y in (1, 14)
-            px[x, y] = BG if edge else PANEL
-
-    d = ImageDraw.Draw(img)
-    # Scaled ⚡: (19,7)->(10.5,15)->(21.5,15)->(13,25) in 32-space
-    d.line([(9, 4), (5, 7), (11, 7), (6, 12)], fill=GOLD, width=2)
-    for cx, cy in [(9, 4), (6, 12)]:
-        for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-            x, y = cx + dx, cy + dy
-            if 0 <= x < 16 and 0 <= y < 16 and (x, y) not in corners:
-                px[x, y] = WHITE
-        px[cx, cy] = BLUE
+    for y, row in enumerate(glyph):
+        for x, ch in enumerate(row):
+            px[x, y] = colors[ch]
     return img
 
 
