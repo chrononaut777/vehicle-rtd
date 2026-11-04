@@ -28,7 +28,9 @@ export interface Station {
   z?: number;
   /** Stop dwell override in seconds; default from docking animation when cargo assumed. */
   dwellSeconds?: number;
-  /** Belt mark used at this station's freight platforms. */
+  /**
+   * @deprecated Prefer route `cargo.beltMk`. Kept optional for migrating old saves/shares.
+   */
   beltMk?: BeltMk;
   /**
    * Total solid-item throughput at this station (items/min) —
@@ -73,6 +75,8 @@ export interface CargoSettings {
   stackSize: number;
   /** Auto-size engines/cars/fill from station I/O + round-trip time. */
   autoSizeConsist: boolean;
+  /** Belt mark used at freight platforms on this route (shared across stations). */
+  beltMk: BeltMk;
 }
 
 /**
@@ -138,7 +142,25 @@ export const DEFAULT_FLAGS: ProjectFlags = {
 export const DEFAULT_CARGO: CargoSettings = {
   stackSize: 100,
   autoSizeConsist: true,
+  beltMk: 5,
 };
+
+function asBeltMk(value: unknown): BeltMk | undefined {
+  const n = Number(value);
+  if (n === 1 || n === 2 || n === 3 || n === 4 || n === 5 || n === 6) return n;
+  return undefined;
+}
+
+function normalizeCargo(raw?: Partial<CargoSettings> | null): CargoSettings {
+  return {
+    stackSize: Math.max(1, Number(raw?.stackSize) || DEFAULT_CARGO.stackSize),
+    autoSizeConsist:
+      raw?.autoSizeConsist == null
+        ? DEFAULT_CARGO.autoSizeConsist
+        : !!raw.autoSizeConsist,
+    beltMk: asBeltMk(raw?.beltMk) ?? DEFAULT_CARGO.beltMk,
+  };
+}
 
 /** Distinct map colors for coexisting routes (active uses full opacity). */
 export const ROUTE_COLOR_PALETTE = [
@@ -263,7 +285,7 @@ function normalizeRoute(raw: Partial<Route> & { name?: string }, index: number):
     route: Array.isArray(raw.route) ? raw.route : [],
     consist: { ...DEFAULT_CONSIST, ...raw.consist },
     flags: { ...DEFAULT_FLAGS, ...raw.flags },
-    cargo: { ...DEFAULT_CARGO, ...raw.cargo },
+    cargo: normalizeCargo(raw.cargo),
   };
 }
 
@@ -281,9 +303,8 @@ export function normalizeProject(data: unknown): Project {
 
   // Already multi-route (v2) or has routes array
   if (Array.isArray(raw.routes) && raw.routes.length > 0) {
-    const routes = (raw.routes as Partial<Route>[]).map((r, i) =>
-      normalizeRoute(r, i),
-    );
+    const routesRaw = raw.routes as Partial<Route>[];
+    const routes = routesRaw.map((r, i) => normalizeRoute(r, i));
     const stationsRaw = Array.isArray(raw.stations)
       ? (raw.stations as Station[])
       : [];
@@ -308,13 +329,13 @@ export function normalizeProject(data: unknown): Project {
       };
     });
 
-    return {
+    return migrateStationBeltsToCargo({
       version: 2,
       name,
       stations,
       routes,
       activeRouteId,
-    };
+    }, routesRaw);
   }
 
   // Legacy v1 single-route → one-element routes[]
@@ -330,29 +351,71 @@ export function normalizeProject(data: unknown): Project {
         : vehicleType,
   }));
 
-  const route = normalizeRoute(
-    {
-      id: newId('rt'),
-      name: 'Route 1',
-      vehicleType,
-      waypoints: Array.isArray(raw.waypoints)
-        ? (raw.waypoints as Waypoint[])
-        : [],
-      route: Array.isArray(raw.route) ? (raw.route as RouteNode[]) : [],
-      consist: raw.consist as TrainConsist | undefined,
-      flags: raw.flags as ProjectFlags | undefined,
-      cargo: raw.cargo as CargoSettings | undefined,
-    },
-    0,
-  );
-
-  return {
-    version: 2,
-    name,
-    stations,
-    routes: [route],
-    activeRouteId: route.id,
+  const routeRaw = {
+    id: newId('rt'),
+    name: 'Route 1',
+    vehicleType,
+    waypoints: Array.isArray(raw.waypoints)
+      ? (raw.waypoints as Waypoint[])
+      : [],
+    route: Array.isArray(raw.route) ? (raw.route as RouteNode[]) : [],
+    consist: raw.consist as TrainConsist | undefined,
+    flags: raw.flags as ProjectFlags | undefined,
+    cargo: raw.cargo as CargoSettings | undefined,
   };
+  const route = normalizeRoute(routeRaw, 0);
+
+  return migrateStationBeltsToCargo(
+    {
+      version: 2,
+      name,
+      stations,
+      routes: [route],
+      activeRouteId: route.id,
+    },
+    [routeRaw],
+  );
+}
+
+/**
+ * Lift legacy per-station beltMk onto route cargo (once) and strip station fields.
+ */
+function migrateStationBeltsToCargo(
+  project: Project,
+  routesRaw: Partial<Route>[],
+): Project {
+  let inherited: BeltMk | undefined;
+  for (const s of project.stations) {
+    const mk = asBeltMk(s.beltMk);
+    if (mk != null && (inherited == null || mk > inherited)) inherited = mk;
+  }
+
+  const stations = project.stations.map((s) => {
+    if (s.beltMk == null) return s;
+    const { beltMk: _removed, ...rest } = s;
+    return rest;
+  });
+
+  if (inherited == null) {
+    return { ...project, stations };
+  }
+
+  const routes = project.routes.map((route, i) => {
+    if (route.vehicleType !== 'train') return route;
+    const rawCargo = routesRaw[i]?.cargo;
+    const hadExplicit =
+      rawCargo != null &&
+      typeof rawCargo === 'object' &&
+      'beltMk' in rawCargo &&
+      asBeltMk((rawCargo as CargoSettings).beltMk) != null;
+    if (hadExplicit) return route;
+    return {
+      ...route,
+      cargo: { ...route.cargo, beltMk: inherited! },
+    };
+  });
+
+  return { ...project, stations, routes };
 }
 
 export function newId(prefix: string): string {

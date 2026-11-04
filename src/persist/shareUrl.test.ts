@@ -23,7 +23,6 @@ function sampleProject(): Project {
     x: 100.12,
     y: -200.45,
     z: 50,
-    beltMk: 5,
     itemsPerMin: 780,
   };
   const b: Station = {

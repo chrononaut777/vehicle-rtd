@@ -1,4 +1,9 @@
-import { DRONE_CARGO_STACKS, getActiveRoute } from '../../domain/types';
+import {
+  DRONE_CARGO_STACKS,
+  getActiveRoute,
+  type BeltMk,
+} from '../../domain/types';
+import { BELT_MK_OPTIONS, beltRate } from '../../physics/belts';
 import { DRONE } from '../../physics/constants';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useUiStore } from '../../store/useUiStore';
@@ -108,6 +113,22 @@ export default function SettingsPanel() {
               onCommit={(n) => setCargo({ stackSize: Math.max(1, n ?? 100) })}
             />
           </label>
+          <label>
+            Belt mark
+            <select
+              value={active.cargo.beltMk ?? 5}
+              onChange={(e) =>
+                setCargo({ beltMk: Number(e.target.value) as BeltMk })
+              }
+            >
+              {BELT_MK_OPTIONS.map((mk) => (
+                <option key={mk} value={mk}>
+                  Mk.{mk} ({beltRate(mk)}/min each · dual{' '}
+                  {beltRate(mk) * 2}/min per platform)
+                </option>
+              ))}
+            </select>
+          </label>
           <label className="check">
             <input
               type="checkbox"
@@ -118,7 +139,7 @@ export default function SettingsPanel() {
           </label>
           <p className="hint">
             Cars = ceil(items/min × RT ÷ car capacity), engines = ceil(cars ÷ 3),
-            platforms = cars. Set station belt + items/min first.
+            platforms = cars. Set belt mark + station items/min first.
           </p>
           <div className="consist-grid">
             <label>

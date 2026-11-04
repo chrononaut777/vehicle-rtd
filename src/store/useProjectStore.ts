@@ -525,7 +525,6 @@ export const useProjectStore = create<ProjectState>((set, get) => {
         y: c.y,
         z: clip?.z ?? active.flags.cruiseHeight,
         dwellSeconds: clip?.dwellSeconds,
-        beltMk: clip?.beltMk ?? (active.vehicleType === 'drone' ? undefined : 5),
         itemsPerMin: clip?.itemsPerMin,
       };
       const next: Project = {
@@ -556,7 +555,6 @@ export const useProjectStore = create<ProjectState>((set, get) => {
         role: source.role,
         z: source.z,
         dwellSeconds: source.dwellSeconds,
-        beltMk: source.beltMk,
         itemsPerMin: source.itemsPerMin,
       };
       set({

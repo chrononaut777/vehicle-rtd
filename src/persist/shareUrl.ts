@@ -97,18 +97,32 @@ function unpackFlags(f: unknown): ProjectFlags {
 function packCargo(c: CargoSettings): unknown[] | undefined {
   if (
     c.stackSize === DEFAULT_CARGO.stackSize &&
-    c.autoSizeConsist === DEFAULT_CARGO.autoSizeConsist
+    c.autoSizeConsist === DEFAULT_CARGO.autoSizeConsist &&
+    c.beltMk === DEFAULT_CARGO.beltMk
   ) {
     return undefined;
   }
-  return [c.stackSize, c.autoSizeConsist ? 1 : 0];
+  const row: unknown[] = [c.stackSize, c.autoSizeConsist ? 1 : 0];
+  if (c.beltMk !== DEFAULT_CARGO.beltMk) row.push(c.beltMk);
+  return row;
 }
 
 function unpackCargo(c: unknown): CargoSettings {
   if (!Array.isArray(c) || c.length < 2) return { ...DEFAULT_CARGO };
+  const beltRaw = c[2] != null ? Number(c[2]) : DEFAULT_CARGO.beltMk;
+  const beltMk =
+    beltRaw === 1 ||
+    beltRaw === 2 ||
+    beltRaw === 3 ||
+    beltRaw === 4 ||
+    beltRaw === 5 ||
+    beltRaw === 6
+      ? (beltRaw as BeltMk)
+      : DEFAULT_CARGO.beltMk;
   return {
     stackSize: Math.max(1, Number(c[0]) || 100),
     autoSizeConsist: !!c[1],
+    beltMk,
   };
 }
 
@@ -131,16 +145,12 @@ export function packProject(project: Project): unknown {
     ];
     const z = st.z ?? null;
     const dwell = st.dwellSeconds ?? null;
-    const belt = st.beltMk ?? null;
     const ipm = st.itemsPerMin ?? null;
-    if (z != null || dwell != null || belt != null || ipm != null) {
+    if (z != null || dwell != null || ipm != null) {
       row.push(z != null ? roundCoord(z) : null);
     }
-    if (dwell != null || belt != null || ipm != null) {
+    if (dwell != null || ipm != null) {
       row.push(dwell);
-    }
-    if (belt != null || ipm != null) {
-      row.push(belt);
     }
     if (ipm != null) {
       row.push(ipm);
@@ -219,8 +229,19 @@ export function unpackProject(raw: unknown): Project {
     };
     if (a[5] != null) st.z = Number(a[5]);
     if (a[6] != null) st.dwellSeconds = Number(a[6]);
-    if (a[7] != null) st.beltMk = Number(a[7]) as BeltMk;
-    if (a[8] != null) st.itemsPerMin = Number(a[8]);
+    // Legacy rows: [..., z, dwell, beltMk, itemsPerMin]
+    // Current rows: [..., z, dwell, itemsPerMin] (belt lives on route cargo)
+    if (a[7] != null) {
+      const v = Number(a[7]);
+      if (a[8] != null) {
+        st.beltMk = Number(a[7]) as BeltMk;
+        st.itemsPerMin = Number(a[8]);
+      } else if (v >= 1 && v <= 6 && Number.isInteger(v)) {
+        st.beltMk = v as BeltMk;
+      } else {
+        st.itemsPerMin = v;
+      }
+    }
     return st;
   });
 

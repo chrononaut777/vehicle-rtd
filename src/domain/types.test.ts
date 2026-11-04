@@ -62,6 +62,7 @@ describe('normalizeProject multi-route migration', () => {
     expect(route.consist.locomotives).toBe(2);
     expect(route.flags.cruiseHeight).toBe(80);
     expect(route.cargo.stackSize).toBe(200);
+    expect(route.cargo.beltMk).toBe(5);
     expect(p.activeRouteId).toBe(route.id);
 
     const sim = toRouteSimInput(p);
@@ -103,5 +104,40 @@ describe('normalizeProject multi-route migration', () => {
     expect(p.activeRouteId).toBe('rt_b');
     expect(getActiveRoute(p).name).toBe('Drone B');
     expect(getActiveRoute(p).cargo.stackSize).toBe(500);
+    expect(p.routes[0].cargo.beltMk).toBe(5);
+  });
+
+  it('migrates legacy per-station beltMk onto train route cargo', () => {
+    const raw = {
+      version: 2,
+      name: 'Belts',
+      activeRouteId: 'rt_a',
+      stations: [
+        {
+          id: 'st_a',
+          name: 'A',
+          vehicleType: 'train',
+          role: 'pickup',
+          x: 0,
+          y: 0,
+          beltMk: 6,
+        },
+      ],
+      routes: [
+        {
+          id: 'rt_a',
+          name: 'Train',
+          vehicleType: 'train',
+          waypoints: [],
+          route: [],
+          consist: { locomotives: 1, freightCars: 2, fillFraction: 1 },
+          flags: { flatTrack: true, cruiseHeight: 50, closedLoop: true },
+          cargo: { stackSize: 100, autoSizeConsist: true },
+        },
+      ],
+    };
+    const p = normalizeProject(raw);
+    expect(p.stations[0].beltMk).toBeUndefined();
+    expect(p.routes[0].cargo.beltMk).toBe(6);
   });
 });

@@ -1,6 +1,7 @@
 import type { BeltMk, StationRole } from '../../domain/types';
 import { getActiveRoute } from '../../domain/types';
-import { BELT_MK_OPTIONS, beltRate, platformBeltCeiling } from '../../physics/belts';
+import { platformBeltCeiling } from '../../physics/belts';
+import { platformsForStation } from '../../physics/sizeConsist';
 import { useProjectStore } from '../../store/useProjectStore';
 import NumberField from '../NumberField';
 
@@ -24,6 +25,13 @@ export default function SelectionInspector() {
 
   const active = getActiveRoute(project);
   const selected = project.stations.find((s) => s.id === selectedStationId);
+  const stationPlatforms = selected
+    ? platformsForStation(
+        selected,
+        sizing?.platforms,
+        active.cargo.beltMk ?? 5,
+      )
+    : null;
 
   if (!selected && !selectedWaypointId) return null;
 
@@ -123,25 +131,6 @@ export default function SelectionInspector() {
             </label>
             {selected.role !== 'passthrough' && (
               <>
-                {selected.vehicleType !== 'drone' && (
-                  <label>
-                    Belt mark
-                    <select
-                      value={selected.beltMk ?? 5}
-                      onChange={(e) =>
-                        updateStation(selected.id, {
-                          beltMk: Number(e.target.value) as BeltMk,
-                        })
-                      }
-                    >
-                      {BELT_MK_OPTIONS.map((mk) => (
-                        <option key={mk} value={mk}>
-                          Mk.{mk} ({beltRate(mk)}/min each)
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                )}
                 <label>
                   {selected.role === 'dropoff' ? 'Output' : 'Input'} items/min
                   <NumberField
@@ -156,14 +145,28 @@ export default function SelectionInspector() {
                   />
                 </label>
                 {selected.vehicleType !== 'drone' && (
-                  <p className="hint">
-                    Dual-port platform ceiling ≈{' '}
-                    {platformBeltCeiling((selected.beltMk ?? 5) as BeltMk)}/min
-                    per freight platform (2× Mk.{selected.beltMk ?? 5}).
-                    {sizing
-                      ? ` With ${sizing.platforms} platforms ≈ ${platformBeltCeiling((selected.beltMk ?? 5) as BeltMk) * sizing.platforms}/min.`
-                      : ''}
-                  </p>
+                  <>
+                    {stationPlatforms && (
+                      <dl className="stats sizing-stats">
+                        <div>
+                          <dt>Platforms</dt>
+                          <dd>{stationPlatforms.platforms}</dd>
+                        </div>
+                      </dl>
+                    )}
+                    <p className="hint">
+                      Dual-port Mk.{active.cargo.beltMk ?? 5} ceiling ≈{' '}
+                      {platformBeltCeiling(
+                        (active.cargo.beltMk ?? 5) as BeltMk,
+                      )}
+                      /min per freight platform (set belt mark in Settings).
+                      {stationPlatforms
+                        ? stationPlatforms.beltBound
+                          ? ` Belts need ${stationPlatforms.beltPlatforms} platforms for this rate (train dock is ${stationPlatforms.dockPlatforms}).`
+                          : ` Dock length ${stationPlatforms.dockPlatforms} ≈ ${platformBeltCeiling((active.cargo.beltMk ?? 5) as BeltMk) * stationPlatforms.platforms}/min.`
+                        : ''}
+                    </p>
+                  </>
                 )}
               </>
             )}
