@@ -13,6 +13,12 @@ export default function SelectionInspector() {
   const project = useProjectStore((s) => s.project);
   const selectedStationId = useProjectStore((s) => s.selectedStationId);
   const selectedWaypointId = useProjectStore((s) => s.selectedWaypointId);
+  const selectedStationIds = useProjectStore((s) => s.selectedStationIds);
+  const selectedWaypointIds = useProjectStore((s) => s.selectedWaypointIds);
+  const selectedMidpointIndices = useProjectStore(
+    (s) => s.selectedMidpointIndices,
+  );
+  const deleteSelection = useProjectStore((s) => s.deleteSelection);
   const sizing = useProjectStore((s) => s.sizing);
   const updateStation = useProjectStore((s) => s.updateStation);
   const removeStation = useProjectStore((s) => s.removeStation);
@@ -35,12 +41,47 @@ export default function SelectionInspector() {
       )
     : null;
 
-  if (!selected && !selectedWaypointId) return null;
+  const selectedCount =
+    selectedStationIds.length +
+    selectedWaypointIds.length +
+    selectedMidpointIndices.length;
+  if (!selected && !selectedWaypointId && selectedCount === 0) return null;
 
   const close = () => {
     selectStation(null);
     selectWaypoint(null);
   };
+
+  if (selectedCount > 1) {
+    return (
+      <aside className="selection-inspector" aria-label="Selection">
+        <header className="floating-panel-header">
+          <h2>{selectedCount} selected</h2>
+          <button
+            type="button"
+            className="floating-panel-close"
+            onClick={close}
+            aria-label="Deselect"
+          >
+            ✕
+          </button>
+        </header>
+        <div className="floating-panel-body">
+          <p className="hint">
+            {selectedStationIds.length} station
+            {selectedStationIds.length === 1 ? '' : 's'}, {selectedWaypointIds.length}{' '}
+            waypoint{selectedWaypointIds.length === 1 ? '' : 's'},{' '}
+            {selectedMidpointIndices.length} bend
+            {selectedMidpointIndices.length === 1 ? '' : 's'}. Shift-click to add
+            or remove. Drag moves the whole selection.
+          </p>
+          <button type="button" className="danger" onClick={() => deleteSelection()}>
+            Delete selected
+          </button>
+        </div>
+      </aside>
+    );
+  }
 
   return (
     <aside className="selection-inspector" aria-label="Selection">

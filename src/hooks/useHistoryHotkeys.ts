@@ -21,8 +21,8 @@ export function useHistoryHotkeys() {
       if (isEditableTarget(e.target)) return;
 
       if (e.key === 'Delete' || e.key === 'Backspace') {
-        const { selectedStationId, selectedWaypointId } = useProjectStore.getState();
-        if (selectedStationId || selectedWaypointId) {
+        const { selectedStationIds, selectedWaypointIds } = useProjectStore.getState();
+        if (selectedStationIds.length || selectedWaypointIds.length) {
           e.preventDefault();
           deleteSelection();
         }
@@ -33,10 +33,10 @@ export function useHistoryHotkeys() {
 
       const key = e.key.toLowerCase();
       if (key === 'c') {
-        const { selectedStationId } = useProjectStore.getState();
-        if (selectedStationId) {
+        const { selectedStationIds } = useProjectStore.getState();
+        if (selectedStationIds.length === 1) {
           e.preventDefault();
-          copyStation(selectedStationId);
+          copyStation(selectedStationIds[0]);
         }
         return;
       }

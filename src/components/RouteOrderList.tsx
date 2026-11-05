@@ -10,8 +10,10 @@ export default function RouteOrderList() {
   const removeRouteNodeAt = useProjectStore((s) => s.removeRouteNodeAt);
   const selectStation = useProjectStore((s) => s.selectStation);
   const selectWaypoint = useProjectStore((s) => s.selectWaypoint);
-  const selectedStationId = useProjectStore((s) => s.selectedStationId);
-  const selectedWaypointId = useProjectStore((s) => s.selectedWaypointId);
+  const toggleStationSelected = useProjectStore((s) => s.toggleStationSelected);
+  const toggleWaypointSelected = useProjectStore((s) => s.toggleWaypointSelected);
+  const selectedStationIds = useProjectStore((s) => s.selectedStationIds);
+  const selectedWaypointIds = useProjectStore((s) => s.selectedWaypointIds);
   const appendUnlinkedStations = useProjectStore((s) => s.appendUnlinkedStations);
   const clearRoute = useProjectStore((s) => s.clearRoute);
   const tool = useProjectStore((s) => s.tool);
@@ -101,13 +103,13 @@ export default function RouteOrderList() {
             if (node.kind === 'station') {
               kind = 'station';
               label = stations.get(node.stationId)?.name ?? node.stationId;
-              selected = selectedStationId === node.stationId;
+              selected = selectedStationIds.includes(node.stationId);
             } else {
               const w = waypoints.get(node.waypointId);
               label = w
                 ? `Waypoint (${w.x.toFixed(0)}, ${w.y.toFixed(0)})`
                 : node.waypointId;
-              selected = selectedWaypointId === node.waypointId;
+              selected = selectedWaypointIds.includes(node.waypointId);
             }
 
             return (
@@ -151,7 +153,12 @@ export default function RouteOrderList() {
                 <button
                   type="button"
                   className="route-order-label"
-                  onClick={() => {
+                  onClick={(e) => {
+                    if (e.shiftKey) {
+                      if (node.kind === 'station') toggleStationSelected(node.stationId);
+                      else toggleWaypointSelected(node.waypointId);
+                      return;
+                    }
                     if (node.kind === 'station') selectStation(node.stationId);
                     else selectWaypoint(node.waypointId);
                   }}

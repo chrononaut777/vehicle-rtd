@@ -16,12 +16,19 @@ export function useChromeHotkeys() {
       if (e.key !== 'Escape') return;
       if (isEditableTarget(e.target)) return;
 
-      const { selectedStationId, selectedWaypointId, selectStation, selectWaypoint } =
-        useProjectStore.getState();
-      if (selectedStationId || selectedWaypointId) {
+      const {
+        selectedStationIds,
+        selectedWaypointIds,
+        selectedMidpointIndices,
+        selectStation,
+      } = useProjectStore.getState();
+      if (
+        selectedStationIds.length ||
+        selectedWaypointIds.length ||
+        selectedMidpointIndices.length
+      ) {
         e.preventDefault();
         selectStation(null);
-        selectWaypoint(null);
         return;
       }
 

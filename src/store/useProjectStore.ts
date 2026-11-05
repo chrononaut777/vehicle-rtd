@@ -43,6 +43,7 @@ import {
 } from '../persist/shareUrl';
 import {
   insertAfterRouteIndex,
+  resolveRoutePoints,
   segmentRouteBounds,
 } from '../physics/path';
 import {
@@ -103,10 +104,36 @@ export interface RouteTripSummary {
 /** Station/port details reusable on paste (no id or map position). */
 export type StationClipboard = Omit<Station, 'id' | 'x' | 'y'>;
 
+function selectionState(
+  stationIds: string[],
+  waypointIds: string[],
+  midpointIndices: number[] = [],
+) {
+  const stations = [...new Set(stationIds)];
+  const waypoints = [...new Set(waypointIds)];
+  const mids = [...new Set(midpointIndices)];
+  const onlyStation =
+    stations.length === 1 && waypoints.length === 0 && mids.length === 0;
+  const onlyWaypoint =
+    waypoints.length === 1 && stations.length === 0 && mids.length === 0;
+  return {
+    selectedStationIds: stations,
+    selectedWaypointIds: waypoints,
+    /** Segment indexes of selected line-drag handles on the active route. */
+    selectedMidpointIndices: mids,
+    /** Inspector focus when exactly one stop is selected. */
+    selectedStationId: onlyStation ? stations[0] : null,
+    selectedWaypointId: onlyWaypoint ? waypoints[0] : null,
+  };
+}
+
 interface ProjectState {
   project: Project;
   selectedStationId: string | null;
   selectedWaypointId: string | null;
+  selectedStationIds: string[];
+  selectedWaypointIds: string[];
+  selectedMidpointIndices: number[];
   tool: ToolMode;
   cursor: { x: number; y: number } | null;
   heightmap: Heightmap | null;
@@ -147,6 +174,30 @@ interface ProjectState {
   removeStation: (id: string) => void;
   selectStation: (id: string | null) => void;
   selectWaypoint: (id: string | null) => void;
+  /** Shift-click: add or remove one stop without clearing the rest. */
+  toggleStationSelected: (id: string) => void;
+  toggleWaypointSelected: (id: string) => void;
+  toggleMidpointSelected: (segmentIndex: number) => void;
+  /**
+   * Replace or add a map selection (box select).
+   * `additive` unions with the current set (shift-drag).
+   */
+  selectMany: (
+    stationIds: string[],
+    waypointIds: string[],
+    additive?: boolean,
+    midpointIndices?: number[],
+  ) => void;
+  /**
+   * Move every selected stop by the same delta (one undo step).
+   * `bends` are line-drag handles that should become waypoints when they
+   * leave the segment midpoint.
+   */
+  moveSelectedBy: (
+    dx: number,
+    dy: number,
+    bends?: { segmentIndex: number; x: number; y: number }[],
+  ) => void;
   moveStation: (id: string, x: number, y: number) => void;
   addWaypointAt: (x: number, y: number, afterIndex?: number) => void;
   moveWaypoint: (id: string, x: number, y: number) => void;
@@ -324,6 +375,9 @@ export const useProjectStore = create<ProjectState>((set, get) => {
     project: createEmptyProject(),
     selectedStationId: null,
     selectedWaypointId: null,
+    selectedStationIds: [],
+    selectedWaypointIds: [],
+    selectedMidpointIndices: [],
     tool: 'pan',
     cursor: null,
     heightmap: null,
@@ -392,7 +446,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
       );
       set({
         ...derived,
-        selectedWaypointId: null,
+        ...selectionState([], []),
         statusMessage: null,
       });
       get().persist();
@@ -411,7 +465,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
           activeRouteId: route.id,
         },
         {
-          selectedWaypointId: null,
+          ...selectionState([], []),
           statusMessage: `Added ${route.name}`,
         },
       );
@@ -434,7 +488,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
         project.activeRouteId === routeId ? routes[0].id : project.activeRouteId;
       commitProject(
         { ...project, routes, activeRouteId },
-        { selectedWaypointId: null, statusMessage: 'Route deleted' },
+        { ...selectionState([], []), statusMessage: 'Route deleted' },
       );
     },
 
@@ -468,7 +522,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
           activeRouteId: copy.id,
         },
         {
-          selectedWaypointId: null,
+          ...selectionState([], []),
           statusMessage: `Duplicated ${source.name}`,
         },
       );
@@ -532,8 +586,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
         stations: [...project.stations, station],
       };
       commitProject(next, {
-        selectedStationId: station.id,
-        selectedWaypointId: null,
+        ...selectionState([station.id], []),
         statusMessage: clip
           ? `Placed copy of “${clip.name}”`
           : null,
@@ -627,17 +680,131 @@ export const useProjectStore = create<ProjectState>((set, get) => {
         })),
       };
       commitProject(next, {
-        selectedStationId:
-          get().selectedStationId === id ? null : get().selectedStationId,
+        ...selectionState(
+          get().selectedStationIds.filter((sid) => sid !== id),
+          get().selectedWaypointIds,
+          get().selectedMidpointIndices,
+        ),
       });
     },
 
     selectStation(id) {
-      set({ selectedStationId: id, selectedWaypointId: null });
+      if (id == null) {
+        set(selectionState([], []));
+        return;
+      }
+      set(selectionState([id], []));
     },
 
     selectWaypoint(id) {
-      set({ selectedWaypointId: id, selectedStationId: null });
+      if (id == null) {
+        set(selectionState([], []));
+        return;
+      }
+      set(selectionState([], [id]));
+    },
+
+    toggleStationSelected(id) {
+      const { project, selectedStationIds, selectedWaypointIds } = get();
+      const active = getActiveRoute(project);
+      const onRoute = active.route.some(
+        (n) => n.kind === 'station' && n.stationId === id,
+      );
+      if (!onRoute) return;
+      const next = selectedStationIds.includes(id)
+        ? selectedStationIds.filter((sid) => sid !== id)
+        : [...selectedStationIds, id];
+      set(
+        selectionState(next, selectedWaypointIds, get().selectedMidpointIndices),
+      );
+    },
+
+    toggleWaypointSelected(id) {
+      const { selectedStationIds, selectedWaypointIds, selectedMidpointIndices } =
+        get();
+      const next = selectedWaypointIds.includes(id)
+        ? selectedWaypointIds.filter((wid) => wid !== id)
+        : [...selectedWaypointIds, id];
+      set(selectionState(selectedStationIds, next, selectedMidpointIndices));
+    },
+
+    toggleMidpointSelected(segmentIndex) {
+      const { selectedStationIds, selectedWaypointIds, selectedMidpointIndices } =
+        get();
+      const next = selectedMidpointIndices.includes(segmentIndex)
+        ? selectedMidpointIndices.filter((i) => i !== segmentIndex)
+        : [...selectedMidpointIndices, segmentIndex];
+      set(selectionState(selectedStationIds, selectedWaypointIds, next));
+    },
+
+    selectMany(stationIds, waypointIds, additive = false, midpointIndices = []) {
+      if (!additive) {
+        set(selectionState(stationIds, waypointIds, midpointIndices));
+        return;
+      }
+      const { selectedStationIds, selectedWaypointIds, selectedMidpointIndices } =
+        get();
+      set(
+        selectionState(
+          [...selectedStationIds, ...stationIds],
+          [...selectedWaypointIds, ...waypointIds],
+          [...selectedMidpointIndices, ...midpointIndices],
+        ),
+      );
+    },
+
+    moveSelectedBy(dx, dy, bends = []) {
+      if (Math.hypot(dx, dy) < 0.05 && bends.length === 0) return;
+      const { project, selectedStationIds, selectedWaypointIds } = get();
+      const active0 = getActiveRoute(project);
+      const stationIds = new Set(selectedStationIds);
+      const waypointIds = new Set(selectedWaypointIds);
+      const stations = project.stations.map((s) => {
+        if (!stationIds.has(s.id)) return s;
+        const c = clampToWorld(s.x + dx, s.y + dy);
+        return { ...s, x: c.x, y: c.y };
+      });
+      let next = updateActiveRoute(
+        { ...project, stations },
+        {
+          waypoints: active0.waypoints.map((w) => {
+            if (!waypointIds.has(w.id)) return w;
+            const c = clampToWorld(w.x + dx, w.y + dy);
+            return { ...w, x: c.x, y: c.y };
+          }),
+        },
+      );
+
+      const bendsDesc = [...bends].sort((a, b) => b.segmentIndex - a.segmentIndex);
+      for (const bend of bendsDesc) {
+        const active = getActiveRoute(next);
+        const sim = toRouteSimInput(next, active);
+        const pts = resolveRoutePoints(sim);
+        const a = pts[bend.segmentIndex];
+        const b = pts[bend.segmentIndex + 1];
+        if (!a || !b) continue;
+        const mx = (a.x + b.x) / 2;
+        const my = (a.y + b.y) / 2;
+        if (Math.hypot(mx - bend.x, my - bend.y) < 1) continue;
+        const after = insertAfterRouteIndex(sim, bend.segmentIndex);
+        const c = clampToWorld(bend.x, bend.y);
+        const wp: Waypoint = {
+          id: newId('wp'),
+          x: c.x,
+          y: c.y,
+          z: active.flags.cruiseHeight,
+        };
+        const route = [...active.route];
+        const node = { kind: 'waypoint' as const, waypointId: wp.id };
+        if (after < 0 || after >= route.length) route.push(node);
+        else route.splice(after + 1, 0, node);
+        next = updateActiveRoute(next, {
+          waypoints: [...active.waypoints, wp],
+          route,
+        });
+      }
+
+      commitProject(next, selectionState(selectedStationIds, selectedWaypointIds));
     },
 
     moveStation(id, x, y) {
@@ -667,10 +834,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
           waypoints: [...active.waypoints, wp],
           route,
         }),
-        {
-          selectedWaypointId: wp.id,
-          selectedStationId: null,
-        },
+        selectionState([], [wp.id]),
       );
     },
 
@@ -704,10 +868,11 @@ export const useProjectStore = create<ProjectState>((set, get) => {
             (n) => !(n.kind === 'waypoint' && n.waypointId === id),
           ),
         }),
-        {
-          selectedWaypointId:
-            get().selectedWaypointId === id ? null : get().selectedWaypointId,
-        },
+        selectionState(
+          get().selectedStationIds,
+          get().selectedWaypointIds.filter((wid) => wid !== id),
+          get().selectedMidpointIndices,
+        ),
       );
     },
 
@@ -801,8 +966,7 @@ export const useProjectStore = create<ProjectState>((set, get) => {
           route: [...active.route, { kind: 'station', stationId }],
         }),
         {
-          selectedStationId: stationId,
-          selectedWaypointId: null,
+          ...selectionState([stationId], []),
           statusMessage: null,
         },
       );
@@ -819,13 +983,15 @@ export const useProjectStore = create<ProjectState>((set, get) => {
           route,
           waypoints: pruneWaypoints(route, active.waypoints),
         }),
-        {
-          selectedWaypointId:
-            removed?.kind === 'waypoint' &&
-            get().selectedWaypointId === removed.waypointId
-              ? null
-              : get().selectedWaypointId,
-        },
+        selectionState(
+          removed?.kind === 'station'
+            ? get().selectedStationIds.filter((id) => id !== removed.stationId)
+            : get().selectedStationIds,
+          removed?.kind === 'waypoint'
+            ? get().selectedWaypointIds.filter((id) => id !== removed.waypointId)
+            : get().selectedWaypointIds,
+          [],
+        ),
       );
     },
 
@@ -930,22 +1096,58 @@ export const useProjectStore = create<ProjectState>((set, get) => {
     },
 
     deleteSelection() {
-      const { selectedWaypointId, selectedStationId, project } = get();
-      if (selectedWaypointId) {
-        get().removeWaypoint(selectedWaypointId);
-        return;
+      const state = get();
+      const stationIds = new Set(
+        state.selectedStationIds.length
+          ? state.selectedStationIds
+          : state.selectedStationId
+            ? [state.selectedStationId]
+            : [],
+      );
+      const waypointIds = new Set(
+        state.selectedWaypointIds.length
+          ? state.selectedWaypointIds
+          : state.selectedWaypointId
+            ? [state.selectedWaypointId]
+            : [],
+      );
+      if (stationIds.size === 0 && waypointIds.size === 0) return;
+
+      const { project } = state;
+      const active = getActiveRoute(project);
+      const onActiveRoute = new Set(
+        active.route
+          .filter(
+            (n): n is Extract<RouteNode, { kind: 'station' }> =>
+              n.kind === 'station',
+          )
+          .map((n) => n.stationId),
+      );
+      const dropStations = new Set(
+        [...stationIds].filter((id) => !onActiveRoute.has(id)),
+      );
+
+      let next = updateActiveRoute(project, {
+        route: active.route.filter((n) => {
+          if (n.kind === 'waypoint' && waypointIds.has(n.waypointId)) return false;
+          if (n.kind === 'station' && stationIds.has(n.stationId)) return false;
+          return true;
+        }),
+        waypoints: active.waypoints.filter((w) => !waypointIds.has(w.id)),
+      });
+      if (dropStations.size > 0) {
+        next = {
+          ...next,
+          stations: next.stations.filter((s) => !dropStations.has(s.id)),
+          routes: next.routes.map((r) => ({
+            ...r,
+            route: r.route.filter(
+              (n) => !(n.kind === 'station' && dropStations.has(n.stationId)),
+            ),
+          })),
+        };
       }
-      if (selectedStationId) {
-        const active = getActiveRoute(project);
-        const idx = active.route.findIndex(
-          (n) => n.kind === 'station' && n.stationId === selectedStationId,
-        );
-        if (idx >= 0) {
-          get().removeRouteNodeAt(idx);
-          return;
-        }
-        get().removeStation(selectedStationId);
-      }
+      commitProject(next, selectionState([], []));
     },
 
     clearRoute() {
@@ -998,9 +1200,8 @@ export const useProjectStore = create<ProjectState>((set, get) => {
       set({
         past: past.slice(0, -1),
         future: [...future, cloneProject(project)].slice(-MAX_HISTORY),
-        selectedStationId: null,
-        selectedWaypointId: null,
         ...derived,
+        ...selectionState([], []),
         statusMessage: 'Undid last change',
       });
       get().persist();
@@ -1014,9 +1215,8 @@ export const useProjectStore = create<ProjectState>((set, get) => {
       set({
         future: future.slice(0, -1),
         past: [...past, cloneProject(project)].slice(-MAX_HISTORY),
-        selectedStationId: null,
-        selectedWaypointId: null,
         ...derived,
+        ...selectionState([], []),
         statusMessage: 'Redid last change',
       });
       get().persist();

@@ -1002,6 +1002,14 @@ button.danger {
   border: 2px solid #1a1a1a;
 }
 
+.map-select-box {
+  position: fixed;
+  z-index: 2000;
+  border: 1px solid #3d8bfd;
+  background: rgba(61, 139, 253, 0.18);
+  pointer-events: none;
+}
+
 .waypoint-marker.selected {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
@@ -1055,6 +1063,11 @@ button.danger {
 
 .midpoint-marker:active {
   cursor: grabbing;
+}
+
+.midpoint-marker.selected {
+  background: #3d8bfd;
+  box-shadow: 0 0 0 2px #e8ecf1;
 }
 
 .rt-subhead {
