@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import {
   MapContainer,
   TileLayer,
@@ -192,6 +192,21 @@ function previewGroupDrag(x: number, y: number) {
   });
 }
 
+/** Bend one segment without React state, so the handle isn't recreated mid-drag. */
+function previewBend(index: number, x: number, y: number) {
+  const line = lineByKey.get(`seg-${index}`);
+  if (!line) return;
+  const latlngs = line.getLatLngs() as L.LatLng[];
+  if (latlngs.length < 2) return;
+  const a = latlngs[0];
+  const b = latlngs[latlngs.length - 1];
+  line.setLatLngs([a, L.latLng(gameToLatLng(x, y)), b]);
+  const ag = latLngToGame(a.lat, a.lng);
+  markerByKey
+    .get(`arrow:${index}`)
+    ?.setLatLng(gameToLatLng(ag.x + (x - ag.x) * 0.38, ag.y + (y - ag.y) * 0.38));
+}
+
 function endGroupDrag(x: number, y: number): boolean {
   if (!groupDrag) return false;
   const dx = x - groupDrag.originX;
@@ -230,6 +245,15 @@ function midMarkerIcon(selected: boolean) {
     iconAnchor: [8, 8],
   });
 }
+
+/**
+ * Stable icon instances. A new DivIcon on each render makes react-leaflet
+ * call setIcon mid-drag, which replaces the DOM node and kills the gesture.
+ */
+const midIcons = {
+  plain: midMarkerIcon(false),
+  selected: midMarkerIcon(true),
+};
 
 /** CSS deg from north (0° = up), matching Leaflet CRS.Simple screen axes. */
 function bearingDeg(
@@ -566,42 +590,23 @@ function ActiveRouteLayer({
     [project],
   );
 
-  const [bend, setBend] = useState<{
-    index: number;
-    x: number;
-    y: number;
-  } | null>(null);
   /** Suppress click-to-insert after a drag (Leaflet often fires click on mouseup). */
   const midDragRef = useRef(false);
 
   const points = useMemo(() => resolveRoutePoints(sim), [sim]);
-  const cruiseHeight = active.flags.cruiseHeight;
-
-  const displayPoints = useMemo(() => {
-    if (!bend || points.length < 2) return points;
-    const out = [...points];
-    out.splice(bend.index + 1, 0, {
-      x: bend.x,
-      y: bend.y,
-      z: cruiseHeight,
-    });
-    return out;
-  }, [points, bend, cruiseHeight]);
 
   const segmentPolylines = useMemo(() => {
-    if (displayPoints.length < 2) return [];
-    const applyIssues = !bend;
+    if (points.length < 2) return [];
     const segs: {
       key: string;
       positions: [number, number][];
       color: string;
       weight: number;
     }[] = [];
-    for (let i = 0; i < displayPoints.length - 1; i++) {
-      const a = displayPoints[i];
-      const b = displayPoints[i + 1];
-      // While bending, segment indices shift after the insert preview — skip issue tint.
-      const sev = applyIssues ? highlights.segments.get(i) : undefined;
+    for (let i = 0; i < points.length - 1; i++) {
+      const a = points[i];
+      const b = points[i + 1];
+      const sev = highlights.segments.get(i);
       segs.push({
         key: `seg-${i}`,
         positions: [
@@ -613,7 +618,7 @@ function ActiveRouteLayer({
       });
     }
     return segs;
-  }, [displayPoints, highlights.segments, bend, color]);
+  }, [points, highlights.segments, color]);
 
   // Keep mid markers mounted during drag (filtering them out unmounts Leaflet mid-drag).
   const midpoints = useMemo(() => {
@@ -630,15 +635,10 @@ function ActiveRouteLayer({
     return mids;
   }, [points]);
 
-  // Build from original points (not bend preview) so arrow keys stay stable
-  // while dragging midpoints; hide the segment being bent.
-  const directionArrows = useMemo(() => {
-    const arrows = buildDirectionArrows(points, color, 'act');
-    if (bend) {
-      return arrows.filter((a) => a.key !== `act-arr-${bend.index}`);
-    }
-    return arrows;
-  }, [points, color, bend]);
+  const directionArrows = useMemo(
+    () => buildDirectionArrows(points, color, 'act'),
+    [points, color],
+  );
 
   const segmentEvents = useMemo(
     () => ({
@@ -706,14 +706,14 @@ function ActiveRouteLayer({
             if (layer) markerByKey.set(key, layer);
             else markerByKey.delete(key);
           }}
-          position={
-            bend?.index === m.index
-              ? gameToLatLng(bend.x, bend.y)
-              : gameToLatLng(m.x, m.y)
-          }
+          position={gameToLatLng(m.x, m.y)}
           draggable
           autoPan={false}
-          icon={midMarkerIcon(selectedMidpointIndices.includes(m.index))}
+          icon={
+            selectedMidpointIndices.includes(m.index)
+              ? midIcons.selected
+              : midIcons.plain
+          }
           zIndexOffset={600}
           eventHandlers={{
             mousedown: (e) => {
@@ -740,30 +740,20 @@ function ActiveRouteLayer({
             dragstart: (e) => {
               L.DomEvent.stopPropagation(e);
               midDragRef.current = true;
-              if (beginGroupDrag('mid', String(m.index))) return;
-              const ll = (e.target as L.Marker).getLatLng();
-              const g = latLngToGame(ll.lat, ll.lng);
-              setBend({ index: m.index, x: g.x, y: g.y });
+              beginGroupDrag('mid', String(m.index));
             },
             drag: (e) => {
               midDragRef.current = true;
               const ll = (e.target as L.Marker).getLatLng();
               const g = latLngToGame(ll.lat, ll.lng);
-              if (groupDrag) {
-                previewGroupDrag(g.x, g.y);
-                return;
-              }
-              setBend({ index: m.index, x: g.x, y: g.y });
+              if (groupDrag) previewGroupDrag(g.x, g.y);
+              else previewBend(m.index, g.x, g.y);
             },
             dragend: (e) => {
               const ll = (e.target as L.Marker).getLatLng();
               const g = latLngToGame(ll.lat, ll.lng);
-              if (endGroupDrag(g.x, g.y)) {
-                setBend(null);
-                return;
-              }
+              if (endGroupDrag(g.x, g.y)) return;
               insertWaypointOnSegment(m.index, g.x, g.y);
-              setBend(null);
               // click may follow; leave midDragRef true until click clears it
             },
           }}
